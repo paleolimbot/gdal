@@ -138,6 +138,7 @@ class OGRADBCDataset final : public GDALDataset
 {
     friend class OGRADBCLayer;
 
+    AdbcDriver m_driver{};
     AdbcDatabase m_database{};
     std::unique_ptr<AdbcConnection> m_connection{};
     std::vector<std::unique_ptr<OGRLayer>> m_apoLayers{};

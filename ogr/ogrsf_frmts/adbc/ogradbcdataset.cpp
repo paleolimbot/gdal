@@ -19,7 +19,20 @@
 
 #include <arrow-adbc/adbc_driver_manager.h>
 
-#define ADBC_CALL(func, ...) Adbc##func(__VA_ARGS__)
+#define ADBC_CALL(func, ...) m_driver.func(__VA_ARGS__)
+
+namespace
+{
+
+AdbcStatusCode OGRADBCLoadDriver(const char *driver_name,
+                                 const char *entrypoint, void *driver,
+                                 struct AdbcError *error)
+{
+    return AdbcLoadDriver(driver_name, entrypoint, ADBC_VERSION_1_1_0, driver,
+                          error);
+}
+
+}  // namespace
 
 /************************************************************************/
 /*                           ~OGRADBCDataset()                          */
@@ -34,6 +47,8 @@ OGRADBCDataset::~OGRADBCDataset()
         ADBC_CALL(ConnectionRelease, m_connection.get(), error);
     error.clear();
     ADBC_CALL(DatabaseRelease, &m_database, error);
+    if (m_driver.release)
+        m_driver.release(&m_driver, error);
 }
 
 /************************************************************************/
@@ -161,13 +176,6 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
 {
     OGRADBCError error;
 
-    if (ADBC_CALL(DatabaseNew, &m_database, error) != ADBC_STATUS_OK)
-    {
-        CPLError(CE_Failure, CPLE_AppDefined, "AdbcDatabaseNew() failed: %s",
-                 error.message());
-        return false;
-    }
-
     const char *pszFilename = poOpenInfo->pszFilename;
     std::unique_ptr<GDALOpenInfo> poTmpOpenInfo;
     if (STARTS_WITH(pszFilename, "ADBC:"))
@@ -188,27 +196,7 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
                             EQUAL(CPLGetExtension(pszFilename), "parquet");
     const bool bIsPostgreSQL = STARTS_WITH(pszFilename, "postgresql://");
 
-    AdbcDriverInitFunc pfnDriverInitFunc = GDALGetAdbcDriverInitFunc();
-    if (pfnDriverInitFunc && pszADBCDriverName)
-    {
-        CPLError(CE_Failure, CPLE_NotSupported,
-                 "Both a AdbcDriverInitFunc and ADBC_DRIVER open option are "
-                 "defined. This is not supported");
-        return false;
-    }
-
-    if (pfnDriverInitFunc)
-    {
-        if (AdbcDriverManagerDatabaseSetInitFunc(&m_database, pfnDriverInitFunc,
-                                                 error) != ADBC_STATUS_OK)
-        {
-            CPLError(CE_Failure, CPLE_AppDefined,
-                     "AdbcDriverManagerDatabaseSetInitFunc() failed: %s",
-                     error.message());
-            return false;
-        }
-    }
-    else if (!pszADBCDriverName)
+    if (!pszADBCDriverName)
     {
         if (bIsDuckDB || bIsParquet)
         {
@@ -236,25 +224,41 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
         }
     }
 
-    if (pszADBCDriverName &&
-        ADBC_CALL(DatabaseSetOption, &m_database, "driver", pszADBCDriverName,
-                  error) != ADBC_STATUS_OK)
-    {
-        CPLError(CE_Failure, CPLE_AppDefined,
-                 "AdbcDatabaseSetOption() failed: %s", error.message());
-        return false;
-    }
-
+    // Load the driver
     if (pszADBCDriverName &&
         (bIsDuckDB || bIsParquet || strstr(pszADBCDriverName, "duckdb")))
     {
-        if (ADBC_CALL(DatabaseSetOption, &m_database, "entrypoint",
-                      "duckdb_adbc_init", error) != ADBC_STATUS_OK)
+        if (OGRADBCLoadDriver(pszADBCDriverName, "duckdb_adbc_init", &m_driver,
+                              error) != ADBC_STATUS_OK)
         {
-            CPLError(CE_Failure, CPLE_AppDefined,
-                     "AdbcDatabaseSetOption() failed: %s", error.message());
+            CPLError(CE_Failure, CPLE_AppDefined, "AdbcLoadDriver() failed: %s",
+                     error.message());
             return false;
         }
+    }
+    else
+    {
+        if (OGRADBCLoadDriver(pszADBCDriverName, nullptr, &m_driver, error) !=
+            ADBC_STATUS_OK)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined, "AdbcLoadDriver() failed: %s",
+                     error.message());
+            return false;
+        }
+    }
+
+    // Allocate the database
+    if (ADBC_CALL(DatabaseNew, &m_database, error) != ADBC_STATUS_OK)
+    {
+        CPLError(CE_Failure, CPLE_AppDefined, "AdbcDatabaseNew() failed: %s",
+                 error.message());
+        return false;
+    }
+
+    // Set options
+    if (pszADBCDriverName &&
+        (bIsDuckDB || bIsParquet || strstr(pszADBCDriverName, "duckdb")))
+    {
         if (ADBC_CALL(DatabaseSetOption, &m_database, "path",
                       bIsParquet ? ":memory:" : pszFilename,
                       error) != ADBC_STATUS_OK)
