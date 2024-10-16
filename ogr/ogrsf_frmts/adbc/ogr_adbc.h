@@ -181,7 +181,7 @@ struct OGRADBCError
 
     inline OGRADBCError()
     {
-        memset(&error, 0, sizeof(error));
+        error = ADBC_ERROR_INIT;
     }
 
     inline ~OGRADBCError()

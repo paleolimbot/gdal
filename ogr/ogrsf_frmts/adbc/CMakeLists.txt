@@ -18,6 +18,8 @@ gdal_standard_includes(ogr_ADBC)
 target_include_directories(ogr_ADBC PRIVATE $<TARGET_PROPERTY:ogrsf_generic,SOURCE_DIR>
                                             $<TARGET_PROPERTY:ogr_MEM,SOURCE_DIR>)
 
+find_package(AdbcDriverManager)
+
 if(TARGET AdbcDriverManager::adbc_driver_manager_shared)
   gdal_target_link_libraries(ogr_ADBC PRIVATE AdbcDriverManager::adbc_driver_manager_shared)
   target_compile_definitions(ogr_ADBC PRIVATE OGR_ADBC_HAS_DRIVER_MANAGER)
