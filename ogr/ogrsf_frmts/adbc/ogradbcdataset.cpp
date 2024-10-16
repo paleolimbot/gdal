@@ -17,6 +17,10 @@
 #include "cpl_json.h"
 #include "gdal_adbc.h"
 
+#include <arrow-adbc/adbc_driver_manager.h>
+
+#define ADBC_CALL(func, ...) Adbc##func(__VA_ARGS__)
+
 /************************************************************************/
 /*                           ~OGRADBCDataset()                          */
 /************************************************************************/
@@ -27,9 +31,9 @@ OGRADBCDataset::~OGRADBCDataset()
     m_apoLayers.clear();
     OGRADBCError error;
     if (m_connection)
-        AdbcConnectionRelease(m_connection.get(), error);
+        ADBC_CALL(ConnectionRelease, m_connection.get(), error);
     error.clear();
-    AdbcDatabaseRelease(&m_database, error);
+    ADBC_CALL(DatabaseRelease, &m_database, error);
 }
 
 /************************************************************************/
@@ -83,7 +87,7 @@ OGRADBCDataset::CreateLayer(const char *pszStatement, const char *pszLayerName)
     }
 
     auto statement = std::make_unique<AdbcStatement>();
-    if (AdbcStatementNew(m_connection.get(), statement.get(), error) !=
+    if (ADBC_CALL(StatementNew, m_connection.get(), statement.get(), error) !=
         ADBC_STATUS_OK)
     {
         CPLError(CE_Failure, CPLE_AppDefined, "AdbcStatementNew() failed: %s",
@@ -91,25 +95,25 @@ OGRADBCDataset::CreateLayer(const char *pszStatement, const char *pszLayerName)
         return nullptr;
     }
 
-    if (AdbcStatementSetSqlQuery(statement.get(), osStatement.c_str(), error) !=
-        ADBC_STATUS_OK)
+    if (ADBC_CALL(StatementSetSqlQuery, statement.get(), osStatement.c_str(),
+                  error) != ADBC_STATUS_OK)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "AdbcStatementSetSqlQuery() failed: %s", error.message());
         error.clear();
-        AdbcStatementRelease(statement.get(), error);
+        ADBC_CALL(StatementRelease, statement.get(), error);
         return nullptr;
     }
 
     auto stream = std::make_unique<OGRArrowArrayStream>();
     int64_t rows_affected = -1;
-    if (AdbcStatementExecuteQuery(statement.get(), stream->get(),
-                                  &rows_affected, error) != ADBC_STATUS_OK)
+    if (ADBC_CALL(StatementExecuteQuery, statement.get(), stream->get(),
+                  &rows_affected, error) != ADBC_STATUS_OK)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "AdbcStatementExecuteQuery() failed: %s", error.message());
         error.clear();
-        AdbcStatementRelease(statement.get(), error);
+        ADBC_CALL(StatementRelease, statement.get(), error);
         return nullptr;
     }
 
@@ -117,7 +121,7 @@ OGRADBCDataset::CreateLayer(const char *pszStatement, const char *pszLayerName)
     if (stream->get_schema(&schema) != 0)
     {
         CPLError(CE_Failure, CPLE_AppDefined, "get_schema() failed");
-        AdbcStatementRelease(statement.get(), error);
+        ADBC_CALL(StatementRelease, statement.get(), error);
         return nullptr;
     }
 
@@ -157,7 +161,7 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
 {
     OGRADBCError error;
 
-    if (AdbcDatabaseNew(&m_database, error) != ADBC_STATUS_OK)
+    if (ADBC_CALL(DatabaseNew, &m_database, error) != ADBC_STATUS_OK)
     {
         CPLError(CE_Failure, CPLE_AppDefined, "AdbcDatabaseNew() failed: %s",
                  error.message());
@@ -233,8 +237,8 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
     }
 
     if (pszADBCDriverName &&
-        AdbcDatabaseSetOption(&m_database, "driver", pszADBCDriverName,
-                              error) != ADBC_STATUS_OK)
+        ADBC_CALL(DatabaseSetOption, &m_database, "driver", pszADBCDriverName,
+                  error) != ADBC_STATUS_OK)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
                  "AdbcDatabaseSetOption() failed: %s", error.message());
@@ -244,16 +248,16 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
     if (pszADBCDriverName &&
         (bIsDuckDB || bIsParquet || strstr(pszADBCDriverName, "duckdb")))
     {
-        if (AdbcDatabaseSetOption(&m_database, "entrypoint", "duckdb_adbc_init",
-                                  error) != ADBC_STATUS_OK)
+        if (ADBC_CALL(DatabaseSetOption, &m_database, "entrypoint",
+                      "duckdb_adbc_init", error) != ADBC_STATUS_OK)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "AdbcDatabaseSetOption() failed: %s", error.message());
             return false;
         }
-        if (AdbcDatabaseSetOption(&m_database, "path",
-                                  bIsParquet ? ":memory:" : pszFilename,
-                                  error) != ADBC_STATUS_OK)
+        if (ADBC_CALL(DatabaseSetOption, &m_database, "path",
+                      bIsParquet ? ":memory:" : pszFilename,
+                      error) != ADBC_STATUS_OK)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "AdbcDatabaseSetOption() failed: %s", error.message());
@@ -262,8 +266,8 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
     }
     else if (pszFilename[0])
     {
-        if (AdbcDatabaseSetOption(&m_database, "uri", pszFilename, error) !=
-            ADBC_STATUS_OK)
+        if (ADBC_CALL(DatabaseSetOption, &m_database, "uri", pszFilename,
+                      error) != ADBC_STATUS_OK)
         {
             CPLError(CE_Failure, CPLE_AppDefined,
                      "AdbcDatabaseSetOption() failed: %s", error.message());
@@ -276,9 +280,9 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
     {
         if (STARTS_WITH_CI(pszKey, "ADBC_OPTION_"))
         {
-            if (AdbcDatabaseSetOption(&m_database,
-                                      pszKey + strlen("ADBC_OPTION_"), pszValue,
-                                      error) != ADBC_STATUS_OK)
+            if (ADBC_CALL(DatabaseSetOption, &m_database,
+                          pszKey + strlen("ADBC_OPTION_"), pszValue,
+                          error) != ADBC_STATUS_OK)
             {
                 CPLError(CE_Failure, CPLE_AppDefined,
                          "AdbcDatabaseSetOption() failed: %s", error.message());
@@ -287,7 +291,7 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
         }
     }
 
-    if (AdbcDatabaseInit(&m_database, error) != ADBC_STATUS_OK)
+    if (ADBC_CALL(DatabaseInit, &m_database, error) != ADBC_STATUS_OK)
     {
         CPLError(CE_Failure, CPLE_AppDefined, "AdbcDatabaseInit() failed: %s",
                  error.message());
@@ -295,14 +299,14 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
     }
 
     m_connection = std::make_unique<AdbcConnection>();
-    if (AdbcConnectionNew(m_connection.get(), error) != ADBC_STATUS_OK)
+    if (ADBC_CALL(ConnectionNew, m_connection.get(), error) != ADBC_STATUS_OK)
     {
         CPLError(CE_Failure, CPLE_AppDefined, "AdbcConnectionNew() failed: %s",
                  error.message());
         return false;
     }
 
-    if (AdbcConnectionInit(m_connection.get(), &m_database, error) !=
+    if (ADBC_CALL(ConnectionInit, m_connection.get(), &m_database, error) !=
         ADBC_STATUS_OK)
     {
         CPLError(CE_Failure, CPLE_AppDefined, "AdbcConnectionInit() failed: %s",
@@ -418,13 +422,13 @@ OGRLayer *OGRADBCDataset::GetLayerByName(const char *pszName)
 
     OGRADBCError error;
     auto objectsStream = std::make_unique<OGRArrowArrayStream>();
-    AdbcConnectionGetObjects(m_connection.get(), ADBC_OBJECT_DEPTH_TABLES,
-                             /* catalog = */ nullptr,
-                             /* db_schema = */ nullptr,
-                             /* table_name = */ nullptr,
-                             /* table_type = */ nullptr,
-                             /* column_name = */ nullptr, objectsStream->get(),
-                             error);
+    ADBC_CALL(ConnectionGetObjects, m_connection.get(),
+              ADBC_OBJECT_DEPTH_TABLES,
+              /* catalog = */ nullptr,
+              /* db_schema = */ nullptr,
+              /* table_name = */ nullptr,
+              /* table_type = */ nullptr,
+              /* column_name = */ nullptr, objectsStream->get(), error);
 
     ArrowSchema schema = {};
     if (objectsStream->get_schema(&schema) != 0)
