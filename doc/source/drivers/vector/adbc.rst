@@ -80,6 +80,16 @@ It returns for each table a OGR feature with the following fields (some
 potentially unset or with an empty string): ``catalog_name``, ``schema_name``,
 ``table_name``, ``table_type``.
 
+Custom driver entry point
+-------------------------
+
+A custom driver entry point can be specified by applications by calling
+:cpp:func:`GDALSetAdbcDriverInitFunc` (defined in header :file:`gdal_adbc.h`)
+before using the driver. The specified init function will be used by the
+GDAL ADBC driver as a way of specifying the ADBC driver for all calls in the
+same thread. Setting both the init function and the ``ADBC_DRIVER`` open
+option is not supported.
+
 Examples
 --------
 

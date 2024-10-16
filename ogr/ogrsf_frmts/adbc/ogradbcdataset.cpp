@@ -15,6 +15,7 @@
 #include "ogr_mem.h"
 #include "ogr_p.h"
 #include "cpl_json.h"
+#include "gdal_adbc.h"
 
 /************************************************************************/
 /*                           ~OGRADBCDataset()                          */
@@ -182,7 +183,28 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
     const bool bIsParquet = OGRADBCDriverIsParquet(poOpenInfo) ||
                             EQUAL(CPLGetExtension(pszFilename), "parquet");
     const bool bIsPostgreSQL = STARTS_WITH(pszFilename, "postgresql://");
-    if (!pszADBCDriverName)
+
+    AdbcDriverInitFunc pfnDriverInitFunc = GDALGetAdbcDriverInitFunc();
+    if (pfnDriverInitFunc && pszADBCDriverName)
+    {
+        CPLError(CE_Failure, CPLE_NotSupported,
+                 "Both a AdbcDriverInitFunc and ADBC_DRIVER open option are "
+                 "defined. This is not supported");
+        return false;
+    }
+
+    if (pfnDriverInitFunc)
+    {
+        if (AdbcDriverManagerDatabaseSetInitFunc(&m_database, pfnDriverInitFunc,
+                                                 error) != ADBC_STATUS_OK)
+        {
+            CPLError(CE_Failure, CPLE_AppDefined,
+                     "AdbcDriverManagerDatabaseSetInitFunc() failed: %s",
+                     error.message());
+            return false;
+        }
+    }
+    else if (!pszADBCDriverName)
     {
         if (bIsDuckDB || bIsParquet)
         {
@@ -210,7 +232,8 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
         }
     }
 
-    if (AdbcDatabaseSetOption(&m_database, "driver", pszADBCDriverName,
+    if (pszADBCDriverName &&
+        AdbcDatabaseSetOption(&m_database, "driver", pszADBCDriverName,
                               error) != ADBC_STATUS_OK)
     {
         CPLError(CE_Failure, CPLE_AppDefined,
@@ -218,7 +241,8 @@ bool OGRADBCDataset::Open(const GDALOpenInfo *poOpenInfo)
         return false;
     }
 
-    if (bIsDuckDB || bIsParquet || strstr(pszADBCDriverName, "duckdb"))
+    if (pszADBCDriverName &&
+        (bIsDuckDB || bIsParquet || strstr(pszADBCDriverName, "duckdb")))
     {
         if (AdbcDatabaseSetOption(&m_database, "entrypoint", "duckdb_adbc_init",
                                   error) != ADBC_STATUS_OK)
