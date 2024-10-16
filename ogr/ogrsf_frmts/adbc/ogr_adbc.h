@@ -17,7 +17,7 @@
 #include "ogrsf_frmts.h"
 #include "ogrlayerarrow.h"
 
-#include <arrow-adbc/adbc.h>
+#include <arrow-adbc/adbc_driver_manager.h>
 
 /************************************************************************/
 /*                 OGRArrowArrayToOGRFeatureAdapterLayer                */
