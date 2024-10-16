@@ -66,9 +66,11 @@ OGRADBCDataset::~OGRADBCDataset()
     if (m_connection)
         ADBC_CALL(ConnectionRelease, m_connection.get(), error);
     error.clear();
-    ADBC_CALL(DatabaseRelease, &m_database, error);
     if (m_driver.release)
+    {
+        ADBC_CALL(DatabaseRelease, &m_database, error);
         m_driver.release(&m_driver, error);
+    }
 }
 
 /************************************************************************/
