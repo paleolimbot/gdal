@@ -18,24 +18,25 @@
  *
  * C GDAL entry points for Arrow Database Connectivity (ADBC)
  *
- * This header can only be used if the ADBC macro is defined, indicating that
- * the adbc.h header has already been included before.
+ * These functions provide an opportunity to override the mechanism
+ * that locates and loads ADBC drivers, or provide one if GDAL was
+ * not built with ADBC driver manager support.
  *
  * \since GDAL 3.11
  */
 
 #include "cpl_port.h"
 
-#ifdef ADBC
-
 CPL_C_START
 
-void CPL_DLL GDALSetAdbcDriverInitFunc(AdbcDriverInitFunc init_func);
+typedef uint8_t (*GDALAdbcLoadDriverFunc)(const char *driver_name,
+                                          const char *entrypoint, int version,
+                                          void *driver, void *error);
 
-AdbcDriverInitFunc CPL_DLL GDALGetAdbcDriverInitFunc(void);
+void CPL_DLL GDALSetAdbcLoadDriverOverride(GDALAdbcLoadDriverFunc init_func);
+
+GDALAdbcLoadDriverFunc CPL_DLL GDALGetAdbcLoadDriverOverride(void);
 
 CPL_C_END
-
-#endif
 
 #endif

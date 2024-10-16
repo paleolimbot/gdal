@@ -17,7 +17,8 @@
 #include "ogrsf_frmts.h"
 #include "ogrlayerarrow.h"
 
-#include <arrow-adbc/adbc.h>
+#include "ogr_adbc_internal.h"
+
 
 /************************************************************************/
 /*                 OGRArrowArrayToOGRFeatureAdapterLayer                */

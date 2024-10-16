@@ -11,52 +11,38 @@
  ****************************************************************************/
 
 #include "cpl_port.h"
-
-// Very minimal extract of adbc.h
-#define ADBC
-
-CPL_C_START
-
-typedef uint8_t AdbcStatusCode;
-struct AdbcError;
-typedef AdbcStatusCode (*AdbcDriverInitFunc)(int version, void *driver,
-                                             struct AdbcError *error);
-
-CPL_C_END
-
 #include "gdal_adbc.h"
 
-//! Thread local ADBC driver initialization function
-static thread_local AdbcDriverInitFunc tlAdbcDriverInitFunc = nullptr;
+//! ADBC driver initialization function
+static GDALAdbcLoadDriverFunc GDALAdbcLoadDriver = nullptr;
 
 /************************************************************************/
-/*                       GDALSetAdbcDriverInitFunc()                    */
+/*                      GDALSetAdbcLoadDriverOverride()                 */
 /************************************************************************/
 
-/** Sets the ADBC driver initialization function that should be used during
- * the next calls to the OGR ADBC driver.
- *
- * This is a thread-local setting.
- *
- * When set, it is honored by the OGR ADBC driver to pass the specified
- * initialization function as the argument of
- * AdbcDriverManagerDatabaseSetInitFunc()
+/** When set, it is used by the OGR ADBC driver to populate AdbcDriver
+ * callbacks. This provides an embedding application the opportunity to
+ * locate an up-to-date version of a driver or to bundle a driver not
+ * available at the system level.
  *
  * Setting it to NULL resets to the the default behaviour of the ADBC driver,
- * which is to honor the ADBC_DRIVER open option.
+ * which is use AdbcLoadDriver() from arrow-adbc/adbc_driver_manager.h or
+ * to error if the OGR ADBC driver was not built against a system driver
+ * manager.
  */
-void GDALSetAdbcDriverInitFunc(AdbcDriverInitFunc init_func)
+void GDALSetAdbcLoadDriverOverride(GDALAdbcLoadDriverFunc init_func)
 {
-    tlAdbcDriverInitFunc = init_func;
+    GDALAdbcLoadDriver = init_func;
 }
 
 /************************************************************************/
-/*                       GDALGetAdbcDriverInitFunc()                    */
+/*                    GDALGetAdbcLoadDriverOverride()                   */
 /************************************************************************/
 
-/** Gets the ADBC driver initialization function for the current thread.
+/** Gets the ADBC driver load function. This will be NULL if an explicit
+ * override was not specified.
  */
-AdbcDriverInitFunc GDALGetAdbcDriverInitFunc()
+GDALAdbcLoadDriverFunc GDALGetAdbcLoadDriverOverride()
 {
-    return tlAdbcDriverInitFunc;
+    return GDALAdbcLoadDriver;
 }

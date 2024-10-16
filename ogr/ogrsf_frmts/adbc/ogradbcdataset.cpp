@@ -17,9 +17,12 @@
 #include "cpl_json.h"
 #include "gdal_adbc.h"
 
+#if defined(OGR_ADBC_HAS_DRIVER_MANAGER)
 #include <arrow-adbc/adbc_driver_manager.h>
+#endif
 
-#define ADBC_CALL(func, ...) m_driver.func(__VA_ARGS__)
+#define OGR_ADBC_VERSION ADBC_VERSION_1_1_0
+static_assert(sizeof(AdbcDriver) == ADBC_DRIVER_1_1_0_SIZE);
 
 namespace
 {
@@ -28,11 +31,28 @@ AdbcStatusCode OGRADBCLoadDriver(const char *driver_name,
                                  const char *entrypoint, void *driver,
                                  struct AdbcError *error)
 {
-    return AdbcLoadDriver(driver_name, entrypoint, ADBC_VERSION_1_1_0, driver,
-                          error);
+    GDALAdbcLoadDriverFunc load_driver_override =
+        GDALGetAdbcLoadDriverOverride();
+    if (load_driver_override)
+    {
+        return load_driver_override(driver_name, entrypoint, OGR_ADBC_VERSION,
+                                    driver, error);
+    }
+    else
+    {
+#if defined(OGR_ADBC_HAS_DRIVER_MANAGER)
+        return AdbcLoadDriver(driver_name, entrypoint, OGR_ADBC_VERSION, driver,
+                              error);
+#else
+        return ADBC_STATUS_NOT_IMPLEMENTED;
+#endif
+    }
 }
 
 }  // namespace
+
+// Helper to wrap driver callbacks
+#define ADBC_CALL(func, ...) m_driver.func(__VA_ARGS__)
 
 /************************************************************************/
 /*                           ~OGRADBCDataset()                          */
